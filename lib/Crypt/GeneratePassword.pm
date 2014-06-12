@@ -1,5 +1,12 @@
 package Crypt::GeneratePassword;
+$Crypt::GeneratePassword::VERSION = '0.04';
+# ABSTRACT: generate secure random pronounceable passwords
+
+use 5.006;
 use strict;
+use warnings;
+
+=encoding utf-8
 
 =head1 NAME
 
@@ -43,9 +50,9 @@ computer speed has improved a little since 1977.
 =cut
 
 require Exporter;
-@Crypt::GeneratePassword::ISA = ('Exporter');
-@Crypt::GeneratePassword::EXPORT_OK = qw(word word3 analyze analyze3 chars generate_language load_language);
-%Crypt::GeneratePassword::EXPORT_TAGS = ( 'all' => [ @Crypt::GeneratePassword::EXPORT_OK ] );
+our @ISA         = ('Exporter');
+our @EXPORT_OK   = qw(word word3 analyze analyze3 chars generate_language load_language);
+our %EXPORT_TAGS = ( 'all' => [ @Crypt::GeneratePassword::EXPORT_OK ] );
 
 my $default_language = 'en';
 use vars qw(%languages);
@@ -95,8 +102,8 @@ sub chars($$;$@) {
 
 =head2 word
 
-  $word = word($minlen, $maxlen [, $lang [, $signs [, $caps [, $minfreq, $avgfreq ] ] ] );
-  $word = word3($minlen, $maxlen [, $lang [, $signs [, $caps [, $minfreq, $avgfreq ] ] ] );
+  $word = word($minlen, $maxlen [, $lang [, $numbers [, $caps [, $minfreq, $avgfreq ] ] ] );
+  $word = word3($minlen, $maxlen [, $lang [, $numbers [, $caps [, $minfreq, $avgfreq ] ] ] );
 
 Generates a random pronounceable word. The length of the returned
 word will be between $minlen and $maxlen. If you supply a non-zero
@@ -120,98 +127,104 @@ values are around 0.05 for trigrams (word3) and 0.001 for quadgrams (word).
 
 use vars qw($total);
 
-sub word($$;$$$$$) {
-  my $language = splice(@_,2,1) || '';
-  $language =~ s/[^a-zA-Z_]//g;
-  $language ||= $default_language;
-  eval "require Crypt::GeneratePassword::$language";
-  my $lang = $languages{$language};
-  die "language '${language}' not found" if !$lang;
+sub word($$;$$$$$)
+{
+    my $language = splice(@_,2,1) || '';
+    $language =~ s/[^a-zA-Z_]//g;
+    $language ||= $default_language;
+    eval "require Crypt::GeneratePassword::$language";
+    my $lang = $languages{$language};
+    die "language '${language}' not found" if !$lang;
 
-  my ($minlen, $maxlen, $numbers, $capitals, $minfreq, $avgfreq) = map { int($_) } @_;
-  $minfreq ||= 0;
-  $avgfreq ||= 0.001;
-  $minfreq = int($$lang{'maxquad'}*$minfreq) || 1;
-  $avgfreq = int($$lang{'maxquad'}*$avgfreq);
+    my ($minlen, $maxlen, $numbers, $capitals, $minfreq, $avgfreq) = map { int($_) } @_;
+    $minfreq ||= 0;
+    $avgfreq ||= 0.001;
+    $minfreq = int($$lang{'maxquad'}*$minfreq) || 1;
+    $avgfreq = int($$lang{'maxquad'}*$avgfreq);
 
- WORD: {
-    my $randword = chars($minlen,$maxlen,$set[$numbers?1:0][$capitals?1:0],($numbers?($signs,$numbers):()),($capitals?($caps,$capitals):()));
-    $total++;
-    my $stripped = lc($randword);
-    $stripped =~ s/[\Q$signs\E]//g;
-    my $sum = 0;
-    my $k0 = -1;
-    my $k1 = -1;
-    my $k2 = -1;
-    my $k3 = -1;
+    WORD: {
+        my $randword = chars($minlen,$maxlen,$set[$numbers?1:0][$capitals?1:0],($numbers?($signs,$numbers):()),($capitals?($caps,$capitals):()));
+        $total++;
+        my $stripped = lc($randword);
+        $stripped =~ s/[\Q$signs\E]//g;
+        redo WORD if length($stripped) == 0;
 
-    foreach my $char (split(//,$stripped)) {
-      $k3 = $char;
-      if ($k3 gt 'Z') {
-	$k3 = ord($k3) - ord('a');
-      } else {
-	$k3 = ord($k3) - ord('A');
-      }
+        my $sum = 0;
+        my $k0 = -1;
+        my $k1 = -1;
+        my $k2 = -1;
+        my $k3 = -1;
 
-      if ($k0 > 0) {
-	redo WORD if $$lang{'quads'}[$k0][$k1][$k2][$k3] < $minfreq;
-	$sum += $$lang{'quads'}[$k0][$k1][$k2][$k3];
-      }
+        foreach my $char (split(//,$stripped)) {
+            $k3 = $char;
+            if ($k3 gt 'Z') {
+                $k3 = ord($k3) - ord('a');
+            } else {
+                $k3 = ord($k3) - ord('A');
+            }
 
-      $k0 = $k1;
-      $k1 = $k2;
-      $k2 = $k3;
+            if ($k0 > 0) {
+                redo WORD if $$lang{'quads'}[$k0][$k1][$k2][$k3] < $minfreq;
+                $sum += $$lang{'quads'}[$k0][$k1][$k2][$k3];
+            }
+
+            $k0 = $k1;
+            $k1 = $k2;
+            $k2 = $k3;
+        }
+        redo if $sum/length($stripped) < $avgfreq;
+        redo if (restrict($stripped,$language));
+        return $randword;
     }
-    redo if $sum/length($stripped) < $avgfreq;
-    redo if (restrict($stripped,$language));
-    return $randword;
-  }
 }
 
-sub word3($$;$$$$$) {
-  my $language = splice(@_,2,1) || '';
-  $language =~ s/[^a-zA-Z_]//g;
-  $language ||= $default_language;
-  eval "require Crypt::GeneratePassword::$language";
-  my $lang = $languages{$language};
-  die "language '${language}' not found" if !$lang;
+sub word3($$;$$$$$)
+{
+    my $language = splice(@_,2,1) || '';
+    $language =~ s/[^a-zA-Z_]//g;
+    $language ||= $default_language;
+    eval "require Crypt::GeneratePassword::$language";
+    my $lang = $languages{$language};
+    die "language '${language}' not found" if !$lang;
 
-  my ($minlen, $maxlen, $numbers, $capitals, $minfreq, $avgfreq) = map { int($_) } @_;
-  $minfreq ||= 0.01;
-  $avgfreq ||= 0.05;
-  $minfreq = int($$lang{'maxtri'}*$minfreq) || 1;
-  $avgfreq = int($$lang{'maxtri'}*$avgfreq);
+    my ($minlen, $maxlen, $numbers, $capitals, $minfreq, $avgfreq) = map { int($_) } @_;
+    $minfreq ||= 0.01;
+    $avgfreq ||= 0.05;
+    $minfreq = int($$lang{'maxtri'}*$minfreq) || 1;
+    $avgfreq = int($$lang{'maxtri'}*$avgfreq);
 
- WORD: {
-    my $randword = chars($minlen,$maxlen,$set[$numbers?1:0][$capitals?1:0],($numbers?($signs,$numbers):()),($capitals?($caps,$capitals):()));
-    $total++;
-    my $stripped = lc($randword);
-    $stripped =~ s/[\Q$signs\E]//g;
-    my $sum = 0;
-    my $k1 = -1;
-    my $k2 = -1;
-    my $k3 = -1;
+    WORD: {
+        my $randword = chars($minlen,$maxlen,$set[$numbers?1:0][$capitals?1:0],($numbers?($signs,$numbers):()),($capitals?($caps,$capitals):()));
+        $total++;
+        my $stripped = lc($randword);
+        $stripped =~ s/[\Q$signs\E]//g;
+        redo WORD if length($stripped) == 0;
 
-    foreach my $char (split(//,$stripped)) {
-      $k3 = $char;
-      if ($k3 gt 'Z') {
-	$k3 = ord($k3) - ord('a');
-      } else {
-	$k3 = ord($k3) - ord('A');
-      }
+        my $sum = 0;
+        my $k1 = -1;
+        my $k2 = -1;
+        my $k3 = -1;
 
-      if ($k1 > 0) {
-	redo WORD if $$lang{'tris'}[$k1][$k2][$k3] < $minfreq;
-	$sum += $$lang{'tris'}[$k1][$k2][$k3];
-      }
+        foreach my $char (split(//,$stripped)) {
+            $k3 = $char;
+            if ($k3 gt 'Z') {
+                $k3 = ord($k3) - ord('a');
+            } else {
+                $k3 = ord($k3) - ord('A');
+            }
 
-      $k1 = $k2;
-      $k2 = $k3;
+            if ($k1 > 0) {
+                redo WORD if $$lang{'tris'}[$k1][$k2][$k3] < $minfreq;
+                $sum += $$lang{'tris'}[$k1][$k2][$k3];
+            }
+
+            $k1 = $k2;
+            $k2 = $k3;
+        }
+        redo if $sum/length($stripped) < $avgfreq;
+        redo if (restrict($stripped,$language));
+        return $randword;
     }
-    redo if $sum/length($stripped) < $avgfreq;
-    redo if (restrict($stripped,$language));
-    return $randword;
-  }
 }
 
 =head2 analyze
@@ -233,21 +246,21 @@ $count.
 =cut
 
 sub analyze($@) {
-  my $count = shift;
-  $total = 0;
-  for (1..$count) {
-    my $word = &word(@_);
-  }
-  return $count/$total;
+    my $count = shift;
+    $total = 0;
+    for (1..$count) {
+        my $word = &word(@_);
+    }
+    return $count/$total;
 }
 
 sub analyze3($@) {
-  my $count = shift;
-  $total = 0;
-  for (1..$count) {
-    my $word = &word3(@_);
-  }
-  return $count/$total;
+    my $count = shift;
+    $total = 0;
+    for (1..$count) {
+        my $word = &word3(@_);
+    }
+    return $count/$total;
 }
 
 =head2 generate_language
@@ -330,6 +343,7 @@ sub generate_language($@) {
 
   {
     require Data::Dumper;
+    no warnings 'once';
     local $Data::Dumper::Indent = 0;
     local $Data::Dumper::Purity = 0;
     local $Data::Dumper::Pad = '';
@@ -419,17 +433,17 @@ sub restrict($$) {
   return ($_[0] =~ m/f.ck|ass|rsch|tit|cum|ack|asm|orn|eil|otz|oes/i);
 }
 
-=head1 VERSION
+=head1 SEE ALSO
 
-This document describes version 0.03
+L<Crypt::RandPasswd>
 
-=cut
+=head1 REPOSITORY
 
-$Crypt::GeneratePassword::VERSION = 0.03;
+L<https://github.com/neilbowers/Crypt-GeneratePassword>
 
 =head1 AUTHOR
 
-Copyright 2002 by Jörg Walter <jwalt@cpan.org>,
+Copyright 2002 by JÃ¶rg Walter <jwalt@cpan.org>,
 inspired by ideas from Tom Van Vleck and Morris
 Gasser/FIPS-181.
 
@@ -438,9 +452,5 @@ Gasser/FIPS-181.
 This perl module is free software; it may be redistributed and/or modified
 under the same terms as Perl itself.
 
-
-=head1 SEE ALSO
-
-L<Crypt::RandPasswd>.
 
 =cut
